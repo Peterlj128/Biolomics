@@ -1,0 +1,83 @@
+
+#Processing of raw 16S data using QIIME2
+
+#import reads
+
+qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path manifest.txt \
+  --output-path tctr_paired-end-demux.qza \
+  --input-format PairedEndFastqManifestPhred33V2 \
+
+qiime demux summarize \
+  --i-data ./tctr_paired-end-demux.qza \
+  --o-visualization ./tctr_paired-end-demux.qzv
+
+#DADA2 denoising
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs ./tctr_paired-end-demux.qza \
+  --p-trim-left-f 0 \
+  --p-trunc-len-f 290 \
+  --p-trunc-len-r 220 \
+  --p-max-ee 2 \
+  --p-n-threads 30 \
+  --o-table ./tctr_dada2_table.qza \
+  --o-representative-sequences ./tctr_dada2_repseqs.qza \
+  --o-denoising-stats ./tctr_dada2_stats.qza
+
+#Viewable outputs of DADA2 results
+
+qiime metadata tabulate \
+ --m-input-file ./tctr_dada2_stats.qza \
+ --o-visualization  ./tctr_dada2_stats.qzv \
+
+qiime feature-table summarize \
+  --i-table ./tctr_dada2_table.qza \
+  --m-sample-metadata-file ./metadata.txt \
+  --o-visualization ./tctr_dada2_table.qzv
+
+qiime feature-table tabulate-seqs \
+ --i-data ./tctr_dada2_repseqs.qza \
+ --o-visualization ./tctr_dada2_repseqs.qzv
+
+#Rarefaction curves
+
+qiime diversity alpha-rarefaction \
+  --i-table ./tctr_dada2_table.qza \
+  --m-metadata-file ./metadata.txt \
+  --o-visualization ./tctr_alpha_rarefaction_curves.qzv \
+  --p-min-depth 1000 \
+  --p-max-depth 100000
+
+#Filter ASVs
+
+qiime feature-table filter-features \
+  --i-table ./tctr_dada2_table.qza \
+  --p-min-frequency 10 \
+  --p-min-samples 3 \
+  --o-filtered-table ./tctr_table_filt_10_3.qza
+
+#Phylogenetic tree
+
+qiime fragment-insertion sepp \
+  --i-representative-sequences ./tctr_repseqs_filt_10_3.qza \
+  --o-tree ./tctr_tree_filt_10_3.qza \
+  --o-placements ./tctr_tree_placements_10_3.qza \
+  --p-threads 30
+  
+#Assign taxonomy using Silva reference database  
+qiime feature-classifier classify-sklearn \
+ --i-reads ./tctr_repseqs_filt_10_3.qza \
+ --i-classifier ./silva-138-ssu-nr99-v5-v7-classifier.qza \
+ --o-classification ./tctr_taxonomy_silva138.qza \
+
+qiime metadata tabulate \
+ --m-input-file ./tctr_taxonomy_silva138.qza \
+ --o-visualization ./tctr_taxonomy_silva138.qzv
+
+#Assign taxonomy to timecourse samples using LjSynCom reference database
+./usearch11.0.667_i86linux32 -uparse_ref dna-sequences.fasta -db dna-sequences-LjSC-v5v7_noDup.fa -strand plus -uparseout tc_ES_LjSC_uparse.txt
+
+
+
